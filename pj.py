@@ -2,10 +2,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
+import pickle
 import tensorflow as tf
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
 from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix, roc_curve
 import matplotlib.pyplot as plt
 
@@ -13,7 +11,8 @@ import matplotlib.pyplot as plt
 @st.cache_resource
 def load_artifacts():
     model = tf.keras.models.load_model("loan_default_model.h5")
-    preprocessor = joblib.load("loan_preprocessor.pkl")
+    with open("loan_preprocessor.pkl", "rb") as f:
+        preprocessor = pickle.load(f)
     return model, preprocessor
 
 st.set_page_config(page_title="Loan Default Prediction", layout="wide")
@@ -32,7 +31,7 @@ if uploaded_file:
     model, preprocessor = load_artifacts()
 
     # Preprocess
-    X_processed = preprocessor.transform(df)
+    X_processed = preprocessor.transform(df.drop(columns=["Status"], errors="ignore"))
 
     # Predictions
     probs = model.predict(X_processed).ravel()
