@@ -1,85 +1,62 @@
-# app.py
-import streamlit as st
+# loan_default_model.py
 import pandas as pd
 import numpy as np
-import pickle
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix, roc_curve
-import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix
+import pickle
 
-# ========= Load Model & Preprocessor =========
-@st.cache_resource
-def load_artifacts():
-    with open("loan_model.pkl", "rb") as f:
-        model = pickle.load(f)
-    with open("loan_preprocessor.pkl", "rb") as f:
-        preprocessor = pickle.load(f)
-    return model, preprocessor
+# ========= 1. Load Dataset =========
+df = pd.read_csv("Loan_Default.csv")
 
-st.set_page_config(page_title="Loan Default Prediction", layout="wide")
-st.title("📊 Loan Default Prediction App (Scikit-learn)")
+# Assume target column is "Status" (1 = default, 0 = non-default)
+target = "Status"
+X = df.drop(columns=[target])
+y = df[target]
 
-# ========= Sidebar =========
-st.sidebar.header("Upload Data")
-uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
+# Identify numeric and categorical columns
+num_cols = X.select_dtypes(include=np.number).columns.tolist()
+cat_cols = X.select_dtypes(exclude=np.number).columns.tolist()
 
-# ========= Main Workflow =========
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.write("### Preview of Uploaded Data")
-    st.dataframe(df.head())
+# ========= 2. Preprocessing =========
+preprocessor = ColumnTransformer([
+    ("num", StandardScaler(), num_cols),
+    ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)
+])
 
-    model, preprocessor = load_artifacts()
+# ========= 3. Model =========
+model = RandomForestClassifier(
+    n_estimators=200,
+    class_weight="balanced",
+    random_state=42
+)
 
-    # Preprocess
-    X_processed = preprocessor.transform(df.drop(columns=["Status"], errors="ignore"))
+pipeline = Pipeline(steps=[
+    ("preprocessor", preprocessor),
+    ("classifier", model)
+])
 
-    # Predictions
-    probs = model.predict_proba(X_processed)[:, 1]
-    preds = (probs >= 0.5).astype(int)
+# ========= 4. Train/Test Split =========
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, stratify=y, random_state=42
+)
 
-    # Show Results
-    df_results = df.copy()
-    df_results["Default_Probability"] = probs
-    df_results["Prediction"] = preds
+# ========= 5. Train =========
+pipeline.fit(X_train, y_train)
 
-    st.write("### Predictions")
-    st.dataframe(df_results.head(20))
+# ========= 6. Evaluation =========
+y_pred = pipeline.predict(X_test)
+y_prob = pipeline.predict_proba(X_test)[:, 1]
 
-    # Download option
-    csv_download = df_results.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="📥 Download Predictions CSV",
-        data=csv_download,
-        file_name="loan_predictions.csv",
-        mime="text/csv"
-    )
+print("ROC AUC:", roc_auc_score(y_test, y_prob))
+print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+print("Classification Report:\n", classification_report(y_test, y_pred, zero_division=0))
 
-    # If ground truth column exists, evaluate
-    if "Status" in df.columns:
-        y_true = df["Status"]
-        y_prob = probs
-        y_pred = preds
+# ========= 7. Save Model =========
+with open("loan_model.pkl", "wb") as f:
+    pickle.dump(pipeline, f)
 
-        auc = roc_auc_score(y_true, y_prob)
-        cm = confusion_matrix(y_true, y_pred)
-        report = classification_report(y_true, y_pred, zero_division=0, output_dict=True)
-
-        st.write("### Evaluation Metrics")
-        st.metric("ROC AUC", f"{auc:.4f}")
-        st.write("Confusion Matrix:", cm)
-        st.dataframe(pd.DataFrame(report).transpose())
-
-        # Plot ROC Curve
-        fpr, tpr, _ = roc_curve(y_true, y_prob)
-        fig, ax = plt.subplots()
-        ax.plot(fpr, tpr, label=f"AUC={auc:.4f}")
-        ax.plot([0,1],[0,1],'--', color="red")
-        ax.set_xlabel("False Positive Rate")
-        ax.set_ylabel("True Positive Rate")
-        ax.set_title("ROC Curve")
-        ax.legend()
-        st.pyplot(fig)
-
-else:
-    st.info("👈 Please upload a CSV file to start predictions.")
+print("✅ Model training complete. Saved as loan_model.pkl")
