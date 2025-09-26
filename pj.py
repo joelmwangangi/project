@@ -3,20 +3,21 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
-import tensorflow as tf
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix, roc_curve
 import matplotlib.pyplot as plt
 
 # ========= Load Model & Preprocessor =========
 @st.cache_resource
 def load_artifacts():
-    model = tf.keras.models.load_model("loan_default_model.h5")
+    with open("loan_model.pkl", "rb") as f:
+        model = pickle.load(f)
     with open("loan_preprocessor.pkl", "rb") as f:
         preprocessor = pickle.load(f)
     return model, preprocessor
 
 st.set_page_config(page_title="Loan Default Prediction", layout="wide")
-st.title("📊 Loan Default Prediction App")
+st.title("📊 Loan Default Prediction App (Scikit-learn)")
 
 # ========= Sidebar =========
 st.sidebar.header("Upload Data")
@@ -34,7 +35,7 @@ if uploaded_file:
     X_processed = preprocessor.transform(df.drop(columns=["Status"], errors="ignore"))
 
     # Predictions
-    probs = model.predict(X_processed).ravel()
+    probs = model.predict_proba(X_processed)[:, 1]
     preds = (probs >= 0.5).astype(int)
 
     # Show Results
